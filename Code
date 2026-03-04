@@ -1,0 +1,204 @@
+# Final complete churn prediction script
+# Requirements: pandas, numpy, scikit-learn, matplotlib, seaborn
+# Dataset: user_churn_dataset.csv from https://www.kaggle.com/datasets/fridrichmrtn/user-churn-dataset
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    confusion_matrix, roc_auc_score, roc_curve,
+    precision_recall_curve, average_precision_score
+)
+import warnings
+warnings.filterwarnings('ignore')
+
+# ────────────────────────────────────────────────
+# 1. Load dataset
+# ────────────────────────────────────────────────
+print("Loading dataset...")
+try:
+    df = pd.read_csv('user_churn_dataset.csv')  # change name if your file is named differently
+except FileNotFoundError:
+    print("Error: 'user_churn_dataset.csv' not found in current directory.")
+    print("Please download it from: https://www.kaggle.com/datasets/fridrichmrtn/user-churn-dataset")
+    exit()
+
+print("Dataset shape:", df.shape)
+print("Columns:", list(df.columns))
+
+# ────────────────────────────────────────────────
+# 2. Data Cleaning & Validation
+# ────────────────────────────────────────────────
+print("\n=== Data Cleaning ===")
+
+# Drop visitorid if exists (identifier only)
+if 'visitorid' in df.columns:
+    df = df.drop('visitorid', axis=1)
+    print("Dropped 'visitorid' column")
+
+# Check missing values
+missing = df.isnull().sum()
+print("Missing values:\n", missing[missing > 0])
+if missing.sum() == 0:
+    print("→ No missing values")
+else:
+    print("→ Filling missing numeric values with median")
+    df.fillna(df.median(numeric_only=True), inplace=True)
+
+# Check infinities
+if np.isinf(df.select_dtypes(include=np.number)).any().any():
+    print("→ Replacing infinities with NaN then median")
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    df.fillna(df.median(numeric_only=True), inplace=True)
+
+# Target distribution
+print("\nTarget distribution:")
+print(df['target_class'].value_counts(normalize=True).round(4) * 100, "%")
+
+# ────────────────────────────────────────────────
+# 3. Prepare data for modeling
+# ────────────────────────────────────────────────
+X = df.drop('target_class', axis=1)
+y = df['target_class']
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.20, random_state=42, stratify=y
+)
+
+print(f"\nTrain shape: {X_train.shape}, Test shape: {X_test.shape}")
+
+# ────────────────────────────────────────────────
+# 4. Train Logistic Regression
+# ────────────────────────────────────────────────
+print("\nTraining Logistic Regression...")
+model = LogisticRegression(
+    class_weight='balanced',      # helps with imbalance
+    max_iter=3000,
+    random_state=42,
+    solver='lbfgs'
+)
+
+model.fit(X_train, y_train)
+
+# Predictions
+y_pred = model.predict(X_test)
+y_pred_proba = model.predict_proba(X_test)[:, 1]
+
+# Metrics
+metrics = {
+    'Accuracy':  accuracy_score(y_test, y_pred),
+    'Precision': precision_score(y_test, y_pred),
+    'Recall':    recall_score(y_test, y_pred),
+    'F1-score':  f1_score(y_test, y_pred),
+    'ROC-AUC':   roc_auc_score(y_test, y_pred_proba)
+}
+
+print("\nModel Performance:")
+for name, value in metrics.items():
+    print(f"{name:10}: {value:.4f}")
+
+# ────────────────────────────────────────────────
+# 5. Generate and Save Visualizations
+# ────────────────────────────────────────────────
+print("\nGenerating and saving plots...")
+
+# Helper function to save plots
+def save_plot(fig, filename):
+    fig.savefig(filename, dpi=180, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved: {filename}")
+
+# 5.1 Churn distribution - Bar + Pie
+fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+sns.countplot(x='target_class', data=df, palette='viridis', ax=ax[0])
+ax[0].set_title('Churn Class Distribution')
+ax[0].set_xlabel('Churn (0 = Retained, 1 = Churn)')
+ax[0].set_ylabel('Count')
+
+df['target_class'].value_counts().plot.pie(
+    ax=ax[1], autopct='%1.1f%%', colors=['#66c2a5','#fc8d62'],
+    labels=['Retained','Churned'], title='Churn Proportion'
+)
+save_plot(fig, '01_churn_distribution.png')
+
+# 5.2 Key features distributions (histograms)
+key_features = ['user_rec', 'ses_rec', 'ses_n', 'tran_n', 'rev_sum', 'cat_n_unique']
+if all(col in df.columns for col in key_features):
+    fig = plt.figure(figsize=(15, 9))
+    for i, col in enumerate(key_features, 1):
+        plt.subplot(2, 3, i)
+        sns.histplot(df[col], kde=True, bins=50, color='teal')
+        plt.title(f'Distribution: {col}')
+    plt.tight_layout()
+    save_plot(fig, '02_key_features_distributions.png')
+
+# 5.3 Boxplots: features vs churn
+fig = plt.figure(figsize=(15, 9))
+for i, col in enumerate(key_features, 1):
+    plt.subplot(2, 3, i)
+    sns.boxplot(x='target_class', y=col, data=df, palette='Set2')
+    plt.title(f'{col} by Churn Status')
+plt.tight_layout()
+save_plot(fig, '03_features_vs_churn_boxplots.png')
+
+# 5.4 Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+fig = plt.figure(figsize=(7, 5))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+            xticklabels=['Pred Retained','Pred Churn'],
+            yticklabels=['Actual Retained','Actual Churn'])
+plt.title('Confusion Matrix')
+plt.ylabel('Actual')
+plt.xlabel('Predicted')
+save_plot(fig, '04_confusion_matrix.png')
+
+# 5.5 ROC Curve
+fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+fig = plt.figure(figsize=(8, 6))
+plt.plot(fpr, tpr, color='darkorange', lw=2,
+         label=f'ROC curve (AUC = {roc_auc_score(y_test, y_pred_proba):.3f})')
+plt.plot([0,1], [0,1], color='navy', lw=2, linestyle='--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve')
+plt.legend(loc='lower right')
+plt.grid(alpha=0.3)
+save_plot(fig, '05_roc_curve.png')
+
+# 5.6 Precision-Recall Curve
+prec, rec, _ = precision_recall_curve(y_test, y_pred_proba)
+avg_prec = average_precision_score(y_test, y_pred_proba)
+fig = plt.figure(figsize=(8, 6))
+plt.plot(rec, prec, color='purple', lw=2,
+         label=f'PR curve (AP = {avg_prec:.3f})')
+plt.xlabel('Recall')
+plt.ylabel('Precision')
+plt.title('Precision-Recall Curve')
+plt.legend(loc='best')
+plt.grid(alpha=0.3)
+save_plot(fig, '06_precision_recall_curve.png')
+
+# 5.7 Feature Importance
+importance = pd.DataFrame({
+    'feature': X.columns,
+    'abs_coef': np.abs(model.coef_[0])
+}).sort_values('abs_coef', ascending=False).head(15)
+
+fig = plt.figure(figsize=(10, 7))
+sns.barplot(x='abs_coef', y='feature', data=importance, palette='viridis')
+plt.title('Top 15 Most Important Features (Absolute Coefficient)')
+plt.xlabel('Absolute Coefficient Value')
+save_plot(fig, '07_feature_importance.png')
+
+print("\nAll done!")
+print("Generated files:")
+import glob
+for f in sorted(glob.glob("*.png")):
+    print("  •", f)
+
+print("\nYou can now add these images to your GitHub README.md")
