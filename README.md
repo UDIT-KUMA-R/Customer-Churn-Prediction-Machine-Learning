@@ -1,5 +1,5 @@
 E-commerce Retail Customer Churn Prediction
-This repository contains code and resources for predicting customer churn in an e-commerce retail setting using machine learning techniques. The project utilizes Python libraries like scikit-learn for model training, XGBoost for boosting models, and PCA for dimensionality reduction. Key steps include data preprocessing, exploratory data analysis (EDA), feature engineering, model selection, hyperparameter tuning using GridSearchCV, and model evaluation.
+This repository contains code and resources for predicting customer churn in an e-commerce retail setting using machine learning techniques. The project utilizes Python libraries like scikit-learn for model training, PCA for dimensionality reduction. Key steps include data preprocessing, exploratory data analysis (EDA), feature engineering, model selection, hyperparameter tuning using GridSearchCV, and model evaluation.
 
 Dataset Used
 The dataset used in this project can be found on Kaggle.
